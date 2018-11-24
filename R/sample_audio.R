@@ -36,17 +36,3 @@ sample_audio <- function(
     }
   }
 }
-
-
-
-concat_media <- function(
-  infiles,
-  outfile,
-  temp_dir = tempdir()
-){
-  listfile <- file.path(temp_dir, "list.txt")
-  writeLines(paste0("file '", infiles, "'"), listfile)
-  system2("ffmpeg", glue("-f concat -safe 0 -i {listfile} -c copy {outfile}"))
-  outfile
-}
-
