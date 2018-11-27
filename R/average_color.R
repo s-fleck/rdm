@@ -1,21 +1,23 @@
-#' Title
+#' Average color of each frame of a video
 #'
-#' @param infile
+#' @param infile a video file that can be handled by ffmpeg
+#' @param cores number of cores to use (passed on to [parallel::mclapply()])
 #'
-#' @return
+#' @return an `integer` matrix with 3 columns (read, green, blue)
 #' @export
 #'
-#' @examples
-average_color <- function(infile){
-
+average_frame_color <- function(
+  infile,
+  cores = getOption("mc.cores", 2L)
+){
   td <- tempdir()
   stderr_log <- file.path(td, "ffmpeg_stderr.log")
   stdout_log <- file.path(td, "ffmpeg_stdout.log")
 
-  # rescale to 1x1 frames to get average color
+  # rescale to 1x1 bitmaps to get average color
   ret <- system2(
     "ffmpeg",
-    glue("-i {infile} -vf scale=1:1 -pix_fmt bgr8 {td}/avg_color_tmp%03d.bmp"),
+    glue("-i {infile} -vf scale=1:1 {td}/avg_color_tmp%03d.png"),
     stderr = stderr_log,
     stdout = stdout_log
   )
@@ -25,13 +27,19 @@ average_color <- function(infile){
   res <- matrix(nrow = length(tmpfiles), ncol = 3)
 
   # extract color information with imagemagic
-  for (i in seq_along(tmpfiles)){
-    tf <- tmpfiles[[i]]
-    ret <- system2("convert", glue("{tf} {td}/out.txt"))
-    dd <- readLines(file.path(td, "out.txt"))[[2]]
-    dd <- stringi::stri_extract_first_regex(dd, "\\(\\d{1,3},\\d{1,3},\\d{1,3}\\)")
-    res[i, ] <- as.integer(stringi::stri_extract_all_regex(dd, "\\d{1,3}")[[1]])
-  }
+  do.call(rbind, mclapply(tmpfiles, extract_color_values, mc.cores = cores))
+}
 
-  colMeans(res)
+
+
+
+extract_color_values <- function(
+  infile
+){
+  tf  <- tempfile(fileext = ".txt")
+  ret <- system2("convert", paste(infile, tf))
+  on.exit(file.remove(tf))
+  dd  <- readLines(tf)[[2]]
+  dd  <- stringi::stri_extract_first_regex(dd, "\\(\\d{1,3},\\d{1,3},\\d{1,3}\\)")
+  as.integer(stringi::stri_extract_all_regex(dd, "\\d{1,3}")[[1]])
 }
