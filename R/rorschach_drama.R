@@ -95,7 +95,7 @@ rorschach_drama <- function(
 
       args <- glue(
         '{inf} -y -filter_complex "
-        nullsrc=size={resolution[[1]]*2}x{resolution[[2]]*2} [bgr];\
+        color=size={resolution[[1]]*2}x{resolution[[2]]*2}:color=black [bgr];\
         {scale};\
         {concat}[out];\
         [out]{mirror}[out];\
@@ -126,7 +126,8 @@ rorschach_drama <- function(
 
 concatennate_media <- function(
   infiles,
-  outfile
+  outfile,
+  temp_dir = tempdir()
 ){
   # concatennate
   listfile <- file.path(temp_dir, "list.txt")
@@ -171,7 +172,7 @@ mirror_presets <- list(
     [in0][in1] overlay=W/2:0   [mid0];\
     [mid0][in2] overlay=0:H/2  [mid1];\
     [mid1][in3] overlay=W/2:H/2 ",
-  "16" =
+  "16" =  # shortest=1 for the first overlay so that the nullsink does not go on forever
     "split=16 [in0][in1][in2][in3][in4][in5][in6][in7][in8][in9][ina][inb][inc][ind][ine][inf]; \
     [in0] crop=iw/2:ih/2:0:0 [in0];\
     [in1] crop=iw/2:ih/2:0:0, hflip [in1]; \
@@ -189,7 +190,7 @@ mirror_presets <- list(
     [ind] crop=iw/2:ih/2:0:0, hflip [ind]; \
     [ine] crop=iw/2:ih/2:0:0, vflip [ine]; \
     [inf] crop=iw/2:ih/2:0:0, vflip, hflip [inf]; \
-    [bgr][in1] overlay=0:2     [mid];\
+    [bgr][in1] overlay=0:2:shortest=1 [mid];\
     [mid][in2] overlay=w:0    [mid];\
     [mid][in3] overlay=2*w:0   [mid];\
     [mid][in0] overlay=3*w:0   [mid];\
