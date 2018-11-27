@@ -52,6 +52,7 @@ rorschach_drama <- function(
   } else {
     tempfiles <- tempfiles[start_batch:length(batches)]
     batches   <- batches[start_batch:length(batches)]
+
     yog$info(
       "Generating a %s Mirror Rorschach Drama (%sx%s)",
       c("h" = "horizontal", "v" = "vertical", "4" = "4-way", "16" = "16-way")[[mirror]],
@@ -63,22 +64,23 @@ rorschach_drama <- function(
     yog$debug("Logging stderr to %s", stderr_log)
     yog$debug("Logging stdout to %s", stdout_log)
     pb <- progress::progress_bar$new(
-      total = length(batches),
+      total = length(batches) + start_batch - 1L,
       format = pb_format,
       show_after = 0
     )
 
+
     # mirror args
     mirror <- mirror_presets[[mirror]]  # mirror presets is a global variable
-    yog$info("Processing %s batches", length(batches))
-    pb$tick(0)
+    yog$info("Processing %s batches", length(batches) + start_batch - 1L)
+    pb$tick(start_batch)
     cat("\n")
 
     for (i in seq_along(batches)){
       inf  <- paste("-i", batches[[i]], collapse = " ")
       outf <- tempfiles[[i]]
 
-      yog$info("Processing batch %s/%s", i, length(batches))
+      yog$debug("Processing batch %s/%s", i + start_batch - 1L, length(batches) + + start_batch - 1L)
       yog$debug("Saving temporary file for batch %s to '%s'", i, outf)
       ids <- seq_along(batches[[i]]) - 1L
 
@@ -210,4 +212,4 @@ mirror_presets <- list(
 
 
 
-pb_format <- "[:bar] :percent [:elapsedfull :eta]"
+pb_format <- "[:bar] [:current/:total] [:elapsedfull] eta::eta"
