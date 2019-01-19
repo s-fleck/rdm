@@ -7,8 +7,7 @@
 #' @export
 #'
 average_frame_color <- function(
-  infile,
-  cores = getOption("mc.cores", 2L)
+  infile
 ){
   td <- tempdir()
   stderr_log <- file.path(td, "ffmpeg_stderr.log")
@@ -27,7 +26,7 @@ average_frame_color <- function(
   res <- matrix(nrow = length(tmpfiles), ncol = 3)
 
   # extract color information with imagemagic
-  do.call(rbind, mclapply(tmpfiles, extract_color_values, mc.cores = cores))
+  do.call(rbind, future.apply::future_lapply(tmpfiles, extract_color_values))
 }
 
 

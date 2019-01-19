@@ -19,7 +19,7 @@ sample_clips <- function(
 ){
   n_per_file <- ceiling(n / length(files))
   n <- n_per_file * length(files)
-  yog$info(glue(
+  lg$info(glue(
     "Sampling {n} clips with an expected combined length of {explen} from:\n",
     "{paste0(' * ', files, collapse = '\n')}",
     n, explen = hms::as.hms(round(mean(lengths) * n))
@@ -27,14 +27,22 @@ sample_clips <- function(
 
   pb <- progress::progress_bar$new(total = n, format = pb_format)
 
-  outfiles <- lapply(
+  outfiles <- future.apply::future_lapply(
     files,
-    sample_clips_single,
-    outdir = outdir,
-    n = n_per_file,
-    lengths = lengths,
-    pad = pad,
-    pb = pb
+    function(.x){
+      try(rdm:::lg$trace("Sampling clips from '%s'", .x))
+      tryCatch(
+        sample_clips_single(
+          file = .x,
+          outdir = outdir,
+          n = n_per_file,
+          lengths = lengths,
+          pad = pad,
+          pb = pb
+        ),
+        error = function(e) try(rdm:::lg$error(e))
+      )
+    }
   )
 
   unlist(outfiles)
@@ -58,12 +66,16 @@ sample_clips_single <- function(
     is.numeric(pad) && length(pad) %in% 1:2
   )
 
+  #lg$trace(glue::glue("Sampling {n} clips from {file}"))
+
   if (length(pad) == 1){
     pad <- c(pad, pad)
   }
 
   m_len    <- clip_length(file)
   m_len    <- floor(m_len - sum(pad)) - max(lengths)
+  if (m_len < max(lengths) * n) return(NULL)
+
   s_pos    <- sample(seq(1, m_len, by = min(lengths)), n, replace = FALSE)
   c_lens   <- sample(lengths, n, replace = TRUE, prob = rev(lengths))
   c_names  <- sprintf("%s_%s_[%s].mkv", stringi::stri_rand_strings(1, 10), seq_along(s_pos), c_lens)

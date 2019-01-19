@@ -11,7 +11,9 @@ Encoding: UTF-8
 LazyData: true
 Imports:
   glue,
-  yog
+  lgr,
+  future,
+  future.apply
 Suggests: 
     testthat
-RoxygenNote: 6.1.0
+RoxygenNote: 6.1.1

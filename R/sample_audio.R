@@ -14,7 +14,7 @@ sample_audio <- function(
     pad <- c(pad, pad)
   }
 
-  yog$info("Sampling %s clips from '%s'", n, file)
+  lg$info("Sampling %s clips from '%s'", n, file)
 
   pb <- progress::progress_bar$new(total = n)
 

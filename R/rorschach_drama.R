@@ -23,6 +23,7 @@ rorschach_drama <- function(
   batch_size = 50,
   temp_dir = tempdir(),
   rotate = glue("2*PI*t/10:ow={resolution[[1]]}:oh={resolution[[2]]}:c=none"),
+  hue = "H=2*PI*t: s=sin(2*PI*t)+1",
   start_batch = 1L  # NULL vor no clip creation
 ){
   stopifnot(
@@ -53,16 +54,15 @@ rorschach_drama <- function(
     tempfiles <- tempfiles[start_batch:length(batches)]
     batches   <- batches[start_batch:length(batches)]
 
-    yog$info(
+    lg$info(
       "Generating a %s Mirror Rorschach Drama (%sx%s)",
       c("h" = "horizontal", "v" = "vertical", "4" = "4-way", "16" = "16-way")[[mirror]],
       resolution[[1]],
       resolution[[2]]
     )
-    yog$debug("Codec settings '%s'", video_codec)
-    yog$debug("Writing output to %s", outf)
-    yog$debug("Logging stderr to %s", stderr_log)
-    yog$debug("Logging stdout to %s", stdout_log)
+    lg$debug("Codec settings '%s'", video_codec)
+    lg$debug("Logging stderr to %s", stderr_log)
+    lg$debug("Logging stdout to %s", stdout_log)
     pb <- progress::progress_bar$new(
       total = length(batches) + start_batch - 1L,
       format = pb_format,
@@ -72,7 +72,7 @@ rorschach_drama <- function(
 
     # mirror args
     mirror <- mirror_presets[[mirror]]  # mirror presets is a global variable
-    yog$info("Processing %s batches", length(batches) + start_batch - 1L)
+    lg$info("Processing %s batches", length(batches) + start_batch - 1L)
     pb$tick(start_batch)
     cat("\n")
 
@@ -80,8 +80,8 @@ rorschach_drama <- function(
       inf  <- paste("-i", batches[[i]], collapse = " ")
       outf <- tempfiles[[i]]
 
-      yog$debug("Processing batch %s/%s", i + start_batch - 1L, length(batches) + + start_batch - 1L)
-      yog$debug("Saving temporary file for batch %s to '%s'", i, outf)
+      lg$debug("Processing batch %s/%s", i + start_batch - 1L, length(batches) + + start_batch - 1L)
+      lg$debug("Saving temporary file for batch %s to '%s'", i, outf)
       ids <- seq_along(batches[[i]]) - 1L
 
       scale <-  paste(
@@ -93,6 +93,7 @@ rorschach_drama <- function(
         paste0("[v", ids, "]", collapse = ""), glue("concat=n={length(batches[[i]])}:v=1")
       )
 
+
       assert(all(file.exists(batches[[i]])))
 
       args <- glue(
@@ -101,7 +102,8 @@ rorschach_drama <- function(
         {scale};\
         {concat}[out];\
         [out]{mirror}[out];\
-        [out]rotate={rotate}[out]
+        [out]rotate={rotate}[out];\
+        [out]hue={hue}[out]
         " -map [out] {outf} -c:v {video_codec}'
       )
 
@@ -113,8 +115,8 @@ rorschach_drama <- function(
       )
 
       if (ret != 0){
-        walk(tail(readLines(stderr_log)), yog$fatal)
-        stop(yog$fatal("ffmpeg returned 1, please check log files"))
+        walk(tail(readLines(stderr_log)), lg$fatal)
+        stop(lg$fatal("ffmpeg returned 1, please check log files"))
       }
 
       pb$tick()
@@ -146,7 +148,7 @@ concatennate_media <- function(
     }
   }
 
-  yog$info("Concatennating results to '%s'", outfile)
+  lg$info("Concatennating results to '%s'", outfile)
 
   ret <- system2(
     "ffmpeg", glue("-f concat -safe 0 -i {listfile} -c copy {outfile}"),
@@ -155,7 +157,7 @@ concatennate_media <- function(
   )
 
   if (ret != 0){
-    yog$error("ffmpeg returned 1, please check log file")
+    lg$error("ffmpeg returned 1, please check log file")
   }
 
   outfile
