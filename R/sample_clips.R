@@ -19,18 +19,18 @@ sample_clips <- function(
 ){
   n_per_file <- ceiling(n / length(files))
   n <- n_per_file * length(files)
-  lg$info(glue(
-    "Sampling {n} clips with an expected combined length of {explen} from:\n",
-    "{paste0(' * ', files, collapse = '\n')}",
-    n, explen = hms::as.hms(round(mean(lengths) * n))
-  ))
 
+  lg$info(glue(
+    "Sampling a total of {n} clips from {length(files)} files with an expected",
+    "combined length of {hms::as.hms(round(mean(lengths) * n))}"
+  ), files = files)
   pb <- progress::progress_bar$new(total = n, format = pb_format)
 
   outfiles <- future.apply::future_lapply(
     files,
     function(.x){
-      try(rdm:::lg$trace("Sampling clips from '%s'", .x))
+      lg$set_parent(lgr)  # necessary for inheritance in parallel environments
+      lg$trace("Sampling clips from '%s'", .x)
       tryCatch(
         sample_clips_single(
           file = .x,
@@ -40,7 +40,7 @@ sample_clips <- function(
           pad = pad,
           pb = pb
         ),
-        error = function(e) try(rdm:::lg$error(e))
+        error = function(e) lg$error(e)
       )
     }
   )

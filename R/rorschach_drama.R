@@ -61,27 +61,33 @@ rorschach_drama <- function(
       resolution[[2]]
     )
     lg$debug("Codec settings '%s'", video_codec)
-    lg$debug("Logging stderr to %s", stderr_log)
-    lg$debug("Logging stdout to %s", stdout_log)
+    lg$debug("Logging stderr to '%s'", stderr_log)
+    lg$debug("Logging stdout to '%s'", stdout_log)
     pb <- progress::progress_bar$new(
       total = length(batches) + start_batch - 1L,
-      format = pb_format,
+      format = "[:bar] [:current/:total] [:elapsedfull] [chunk eta::chunk_eta] eta::eta",
       show_after = 0
     )
-
 
     # mirror args
     mirror <- mirror_presets[[mirror]]  # mirror presets is a global variable
     lg$info("Processing %s batches", length(batches) + start_batch - 1L)
-    pb$tick(start_batch)
+    pb$tick(start_batch, tokens = list(chunk_eta = "NA"))
     cat("\n")
+
+    tdiffs <- Sys.time() - Sys.time()
 
     for (i in seq_along(batches)){
       inf  <- paste("-i", batches[[i]], collapse = " ")
       outf <- tempfiles[[i]]
 
-      lg$debug("Processing batch %s/%s", i + start_batch - 1L, length(batches) + + start_batch - 1L)
-      lg$debug("Saving temporary file for batch %s to '%s'", i, outf)
+      lg$debug(
+        "Processing batch %s/%s",
+        i + start_batch - 1L,
+        length(batches) + start_batch - 1L,
+        file = outf
+      )
+
       ids <- seq_along(batches[[i]]) - 1L
 
       scale <-  paste(
@@ -107,6 +113,8 @@ rorschach_drama <- function(
         " -map [out] {outf} -c:v {video_codec}'
       )
 
+      t1 <- Sys.time()
+
       ret <- system2(
         "ffmpeg",
         args,
@@ -114,12 +122,14 @@ rorschach_drama <- function(
         stdout = stdout_log
       )
 
+      tdiffs[[i]] <- Sys.time() - t1
+
       if (ret != 0){
         walk(tail(readLines(stderr_log)), lg$fatal)
         stop(lg$fatal("ffmpeg returned 1, please check log files"))
       }
 
-      pb$tick()
+      pb$tick(tokens = list(chunk_eta = Sys.time() + mean(tdiffs)))
     }
   }
 
