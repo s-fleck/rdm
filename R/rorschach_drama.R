@@ -65,7 +65,7 @@ rorschach_drama <- function(
     lg$debug("Logging stdout to '%s'", stdout_log)
     pb <- progress::progress_bar$new(
       total = length(batches) + start_batch - 1L,
-      format = "[:bar] [:current/:total] [:elapsedfull] [chunk eta::chunk_eta] eta::eta",
+      format = "[:bar] [:current/:total] [:elapsedfull] eta::eta",
       show_after = 0
     )
 
@@ -101,6 +101,8 @@ rorschach_drama <- function(
 
 
       assert(all(file.exists(batches[[i]])))
+      outf_tmp <- paste0(tools::file_path_sans_ext(outf), "_tmp.mkv")
+
 
       args <- glue(
         '{inf} -y -filter_complex "
@@ -110,8 +112,10 @@ rorschach_drama <- function(
         [out]{mirror}[out];\
         [out]rotate={rotate}[out];\
         [out]hue={hue}[out]
-        " -map [out] {outf} -c:v {video_codec}'
+        " -map [out] {outf_tmp} -c:v {video_codec}'
       )
+
+      file.rename(outf_tmp, outf)
 
       t1 <- Sys.time()
 
@@ -129,7 +133,7 @@ rorschach_drama <- function(
         stop(lg$fatal("ffmpeg returned 1, please check log files"))
       }
 
-      pb$tick(tokens = list(chunk_eta = Sys.time() + mean(tdiffs)))
+      pb$tick()
     }
   }
 
