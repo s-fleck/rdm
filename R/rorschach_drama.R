@@ -115,7 +115,6 @@ rorschach_drama <- function(
         " -map [out] {outf_tmp} -c:v {video_codec}'
       )
 
-      file.rename(outf_tmp, outf)
 
       t1 <- Sys.time()
 
@@ -133,6 +132,8 @@ rorschach_drama <- function(
         stop(lg$fatal("ffmpeg returned 1, please check log files"))
       }
 
+
+      file.rename(outf_tmp, outf)
       pb$tick()
     }
   }

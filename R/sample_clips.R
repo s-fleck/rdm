@@ -21,15 +21,15 @@ sample_clips <- function(
   n <- n_per_file * length(files)
 
   lg$info(glue(
-    "Sampling a total of {n} clips from {length(files)} files with an expected",
+    "Sampling a total of {n} clips from {length(files)} files with an expected ",
     "combined length of {hms::as.hms(round(mean(lengths) * n))}"
   ), files = files)
   pb <- progress::progress_bar$new(total = n, format = pb_format)
 
+
   outfiles <- future.apply::future_lapply(
     files,
     function(.x){
-      lg$set_parent(lgr)  # necessary for inheritance in parallel environments
       lg$trace("Sampling clips from '%s'", .x)
       tryCatch(
         sample_clips_single(
@@ -77,7 +77,7 @@ sample_clips_single <- function(
   if (m_len < max(lengths) * n) return(NULL)
 
   s_pos    <- sample(seq(1, m_len, by = min(lengths)), n, replace = FALSE)
-  c_lens   <- sample(lengths, n, replace = TRUE, prob = rev(lengths))
+  c_lens   <- sample(lengths, n, replace = TRUE)
   c_names  <- sprintf("%s_%s_[%s].mkv", stringi::stri_rand_strings(1, 10), seq_along(s_pos), c_lens)
 
   for (i_pos in seq_along(s_pos)){

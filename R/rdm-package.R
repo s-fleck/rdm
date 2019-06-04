@@ -4,5 +4,9 @@
 
 
 .onLoad <- function(...){
-  assign("lg", lgr::lgr$spawn("rdm", threshold = NA), envir = parent.env(environment()))
+  assign(
+    "lg",
+    lgr::get_logger("rdm"),
+    envir = parent.env(environment())
+  )
 }
