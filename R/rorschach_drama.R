@@ -63,19 +63,24 @@ rorschach_drama <- function(
     lg$debug("Codec settings '%s'", video_codec)
     lg$debug("Logging stderr to '%s'", stderr_log)
     lg$debug("Logging stdout to '%s'", stdout_log)
+
     pb <- progress::progress_bar$new(
       total = length(batches) + start_batch - 1L,
-      format = "[:bar] [:current/:total] [:elapsedfull] eta::eta",
+      format = "[:bar] [:current/:total] [:elapsedfull] [eta: :chunk_eta / :total_eta]",
       show_after = 0
     )
 
     # mirror args
     mirror <- mirror_presets[[mirror]]  # mirror presets is a global variable
     lg$info("Processing %s batches", length(batches) + start_batch - 1L)
-    pb$tick(start_batch, tokens = list(chunk_eta = "NA"))
+    pb$tick(start_batch, tokens = list(
+      chunk_eta = "NA",
+      eta2  = "NA")
+    )
     cat("\n")
 
-    tdiffs <- Sys.time() - Sys.time()
+    t0 <- Sys.time()
+    tdiffs <- t0 - t0
 
     for (i in seq_along(batches)){
       inf  <- paste("-i", batches[[i]], collapse = " ")
@@ -134,7 +139,10 @@ rorschach_drama <- function(
 
 
       file.rename(outf_tmp, outf)
-      pb$tick()
+      pb$tick(tokens = list(
+        total_eta      = format(t0 + (mean(tdiffs) * 80)),
+        chunk_eta = format(Sys.time() + mean(tdiffs), "%H:%M:%S")
+      ))
     }
   }
 
