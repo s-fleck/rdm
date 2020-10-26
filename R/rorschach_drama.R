@@ -24,14 +24,14 @@ rorschach_drama <- function(
   temp_dir = tempdir(),
   rotate = glue("2*PI*t/10:ow={resolution[[1]]}:oh={resolution[[2]]}:c=none"),
   hue = "H=2*PI*t: s=sin(2*PI*t)+1",
-  start_batch = 1L  # NULL vor no clip creation
+  start_batch = 1L  # NULL for no clip creation
 ){
   stopifnot(
     all(file.exists(infiles)),
     is_scalar_bool(overwrite),
     dir.exists(dirname(outfile)),
     is.numeric(resolution) && identical(length(resolution) , 2L),
-    is_scalar_character(mirror) && mirror %in% names(mirror_presets),
+    is_scalar_character(mirror) && mirror %in% names(MIRROR_PRESETS),
     is_scalar_character(tune),
     is_scalar_integerish(batch_size),
     dir.exists(temp_dir),
@@ -39,11 +39,11 @@ rorschach_drama <- function(
   )
 
   # init
-  stderr_log <- file.path(temp_dir, "ffmpeg_stderr.log")
-  stdout_log <- file.path(temp_dir, "ffmpeg_stdout.log")
+  stderr_log <- path.expand(file.path(temp_dir, "ffmpeg_stderr.log"))
+  stdout_log <- path.expand(file.path(temp_dir, "ffmpeg_stdout.log"))
   video_codec <- glue("libx264 -preset slow -tune {tune}")
   batches  <- suppressWarnings(vec_split_interval(infiles, batch_size))
-  tempfiles <- file.path(temp_dir, sprintf("clip_%s.mkv", seq_along(batches)))
+  tempfiles <- path.expand(file.path(temp_dir, sprintf("clip_%s.mkv", seq_along(batches))))
   res <- tempfiles
 
   # if resume...
@@ -55,14 +55,13 @@ rorschach_drama <- function(
     batches   <- batches[start_batch:length(batches)]
 
     lg$info(
-      "Generating a %s Mirror Rorschach Drama (%sx%s)",
-      c("h" = "horizontal", "v" = "vertical", "4" = "4-way", "16" = "16-way")[[mirror]],
-      resolution[[1]],
-      resolution[[2]]
+      "generating a {type} mirror rorschach drama ({resolution[[1]]}x{resolution[[2]]})",
+      type = c("h" = "horizontal", "v" = "vertical", "4" = "4-way", "16" = "16-way")[[mirror]]
     )
-    lg$debug("Codec settings '%s'", video_codec)
-    lg$debug("Logging stderr to '%s'", stderr_log)
-    lg$debug("Logging stdout to '%s'", stdout_log)
+    lg$debug("using codec '{codec}'", codec = video_codec)
+    lg$debug("routing ffmpeg stderr to '{path}'", path = stderr_log)
+    lg$debug("routing ffmpeg stdout to '{path}'", path = stdout_log)
+
     pb <- progress::progress_bar$new(
       total = length(batches) + start_batch - 1L,
       format = "[:bar] [:current/:total] [:elapsedfull] eta::eta",
@@ -70,8 +69,8 @@ rorschach_drama <- function(
     )
 
     # mirror args
-    mirror <- mirror_presets[[mirror]]  # mirror presets is a global variable
-    lg$info("Processing %s batches", length(batches) + start_batch - 1L)
+    mirror <- MIRROR_PRESETS[[mirror]]
+    lg$info("processing {length(batches) + start_batch - 1L} batches")
     pb$tick(start_batch, tokens = list(chunk_eta = "NA"))
     cat("\n")
 
@@ -82,9 +81,9 @@ rorschach_drama <- function(
       outf <- tempfiles[[i]]
 
       lg$debug(
-        "Processing batch %s/%s",
-        i + start_batch - 1L,
-        length(batches) + start_batch - 1L,
+        "Processing batch {cur}/{all}",
+        cur = i + start_batch - 1L,
+        all = length(batches) + start_batch - 1L,
         file = outf
       )
 
@@ -99,10 +98,8 @@ rorschach_drama <- function(
         paste0("[v", ids, "]", collapse = ""), glue("concat=n={length(batches[[i]])}:v=1")
       )
 
-
       assert(all(file.exists(batches[[i]])))
       outf_tmp <- paste0(tools::file_path_sans_ext(outf), "_tmp.mkv")
-
 
       args <- glue(
         '{inf} -y -filter_complex "
@@ -115,23 +112,22 @@ rorschach_drama <- function(
         " -map [out] {outf_tmp} -c:v {video_codec}'
       )
 
-
       t1 <- Sys.time()
 
-      ret <- system2(
+      ret <- try({system2(
         "ffmpeg",
         args,
         stderr = stderr_log,
         stdout = stdout_log
-      )
+      )})
 
       tdiffs[[i]] <- Sys.time() - t1
 
-      if (ret != 0){
+      if (is_try_error(ret) || !identical(as.integer(ret), 0L)){
         walk(tail(readLines(stderr_log)), lg$fatal)
-        stop(lg$fatal("ffmpeg returned 1, please check log files"))
+        lg$fatal("skipping batch {i} because of ffmpeg error; please check log files.", temp_file = outf_tmp)
+        next
       }
-
 
       file.rename(outf_tmp, outf)
       pb$tick()
@@ -159,11 +155,11 @@ concatennate_media <- function(
     if (overwrite){
       file.remove(outfile)
     } else {
-      stop(FATAL("'%s' exsits and overwrite == FALSE", outfile))
+      stop(FileExistsError(lg$fatal("'{outfile}' exsits and overwrite == FALSE")))
     }
   }
 
-  lg$info("Concatennating results to '%s'", outfile)
+  lg$info("concatennating results to '{outfile}'")
 
   ret <- system2(
     "ffmpeg", glue("-f concat -safe 0 -i {listfile} -c copy {outfile}"),
@@ -180,7 +176,7 @@ concatennate_media <- function(
 
 
 
-mirror_presets <- list(
+MIRROR_PRESETS <- list(
   h = "split [main][flip]; [flip]crop=iw/2:ih:0:0, hflip[flip]; [main][flip] overlay=W/2:0",
   v = "split [main][flip]; [flip]crop=iw:ih/2:0:0, hflip[flip]; [main][flip] overlay=0:H/2",
   "4" =
