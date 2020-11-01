@@ -80,8 +80,8 @@ rorschach_drama <- function(
       inf  <- paste("-i", batches[[i]], collapse = " ")
       outf <- tempfiles[[i]]
 
-      lg$debug(
-        "Processing batch {cur}/{all}",
+      lg$info(
+        "processing batch {cur}/{all}",
         cur = i + start_batch - 1L,
         all = length(batches) + start_batch - 1L,
         file = outf
@@ -108,7 +108,7 @@ rorschach_drama <- function(
         {concat}[out];\
         [out]{mirror}[out];\
         [out]rotate={rotate}[out];\
-        [out]hue={hue}[out]
+        {if (!is.null(hue)) "[out]hue={hue}[out]" else ""}
         " -map [out] {outf_tmp} -c:v {video_codec}'
       )
 
