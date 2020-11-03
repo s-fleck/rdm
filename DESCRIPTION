@@ -1,7 +1,7 @@
 Package: rdm
 Type: Package
 Title: What the Package Does (Title Case)
-Version: 0.1.0
+Version: 0.0.2
 Author: Who wrote it
 Maintainer: The package maintainer <yourself@somewhere.net>
 Description: More about what it does (maybe more than one line)
@@ -13,7 +13,8 @@ Imports:
   glue,
   lgr,
   future,
-  future.apply
+  future.apply,
+  exceptions
 Suggests: 
     testthat
-RoxygenNote: 6.1.1
+RoxygenNote: 7.1.1

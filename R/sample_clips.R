@@ -66,8 +66,6 @@ sample_clips_single <- function(
     is.numeric(pad) && length(pad) %in% 1:2
   )
 
-  #lg$trace(glue::glue("Sampling {n} clips from {file}"))
-
   if (length(pad) == 1){
     pad <- c(pad, pad)
   }
@@ -76,8 +74,8 @@ sample_clips_single <- function(
   m_len    <- floor(m_len - sum(pad)) - max(lengths)
   if (m_len < max(lengths) * n) return(NULL)
 
-  s_pos    <- sample(seq(1, m_len, by = min(lengths)), n, replace = FALSE)
-  c_lens   <- sample(lengths, n, replace = TRUE)
+  s_pos    <- resample(seq(1, m_len, by = min(lengths)), n, replace = FALSE)
+  c_lens   <- resample(lengths, n, replace = TRUE)
   c_names  <- sprintf("%s_%s_[%s].mkv", stringi::stri_rand_strings(1, 10), seq_along(s_pos), c_lens)
 
   for (i_pos in seq_along(s_pos)){
@@ -109,3 +107,7 @@ clip_length <- function(
 
   vapply(files, clip_length_impl, numeric(1))
 }
+
+
+
+resample <- function(x, ...) x[sample.int(length(x), ...)]

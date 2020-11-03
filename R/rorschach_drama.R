@@ -18,20 +18,22 @@ rorschach_drama <- function(
   outfile,
   overwrite = FALSE,
   resolution = c(1920, 1080),
-  mirror = "4",  # "v", "h", "4"
+  mirror = 4,  # "v", "h", "4"
   tune = "film", # "film", "animation",
   batch_size = 50,
   temp_dir = tempdir(),
-  rotate = glue("2*PI*t/10:ow={resolution[[1]]}:oh={resolution[[2]]}:c=none"),
-  hue = "H=2*PI*t: s=sin(2*PI*t)+1",
-  start_batch = 1L  # NULL vor no clip creation
+  filters = list(
+    glue("rotate=2*PI*t/10:ow={resolution[[1]]}:oh={resolution[[2]]}:c=none"),
+    "hue=H=2*PI*t: s=sin(2*PI*t)+1"
+  ),
+  start_batch = 1L  # NULL for no clip creation
 ){
   stopifnot(
     all(file.exists(infiles)),
     is_scalar_bool(overwrite),
     dir.exists(dirname(outfile)),
     is.numeric(resolution) && identical(length(resolution) , 2L),
-    is_scalar_character(mirror) && mirror %in% names(mirror_presets),
+    is_scalar_integerish(mirror),
     is_scalar_character(tune),
     is_scalar_integerish(batch_size),
     dir.exists(temp_dir),
@@ -39,11 +41,11 @@ rorschach_drama <- function(
   )
 
   # init
-  stderr_log <- file.path(temp_dir, "ffmpeg_stderr.log")
-  stdout_log <- file.path(temp_dir, "ffmpeg_stdout.log")
+  stderr_log <- path.expand(file.path(temp_dir, "ffmpeg_stderr.log"))
+  stdout_log <- path.expand(file.path(temp_dir, "ffmpeg_stdout.log"))
   video_codec <- glue("libx264 -preset slow -tune {tune}")
   batches  <- suppressWarnings(vec_split_interval(infiles, batch_size))
-  tempfiles <- file.path(temp_dir, sprintf("clip_%s.mkv", seq_along(batches)))
+  tempfiles <- path.expand(file.path(temp_dir, sprintf("clip_%s.mkv", seq_along(batches))))
   res <- tempfiles
 
   # if resume...
@@ -55,14 +57,14 @@ rorschach_drama <- function(
     batches   <- batches[start_batch:length(batches)]
 
     lg$info(
-      "Generating a %s Mirror Rorschach Drama (%sx%s)",
-      c("h" = "horizontal", "v" = "vertical", "4" = "4-way", "16" = "16-way")[[mirror]],
-      resolution[[1]],
-      resolution[[2]]
+      "generating a {type} mirror rorschach drama ({resolution[[1]]}x{resolution[[2]]})",
+      type = c("h" = "horizontal", "v" = "vertical", "4" = "4-way", "16" = "16-way")[[mirror]]
     )
-    lg$debug("Codec settings '%s'", video_codec)
-    lg$debug("Logging stderr to '%s'", stderr_log)
-    lg$debug("Logging stdout to '%s'", stdout_log)
+
+    lg$debug("using codec '{codec}'", codec = video_codec)
+    lg$debug("routing ffmpeg stderr to '{path}'", path = stderr_log)
+    lg$debug("routing ffmpeg stdout to '{path}'", path = stdout_log)
+
 
     pb <- progress::progress_bar$new(
       total = length(batches) + start_batch - 1L,
@@ -70,13 +72,9 @@ rorschach_drama <- function(
       show_after = 0
     )
 
-    # mirror args
-    mirror <- mirror_presets[[mirror]]  # mirror presets is a global variable
-    lg$info("Processing %s batches", length(batches) + start_batch - 1L)
-    pb$tick(start_batch, tokens = list(
-      chunk_eta = "NA",
-      eta2  = "NA")
-    )
+    lg$info("processing {length(batches) + start_batch - 1L} batches")
+    pb$tick(start_batch, tokens = list(chunk_eta = "NA"))
+
     cat("\n")
 
     t0 <- Sys.time()
@@ -85,64 +83,66 @@ rorschach_drama <- function(
     for (i in seq_along(batches)){
       inf  <- paste("-i", batches[[i]], collapse = " ")
       outf <- tempfiles[[i]]
+      batch_number <- i + start_batch - 1L  # for logging
+      ids <- seq_along(batches[[i]]) - 1L
 
-      lg$debug(
-        "Processing batch %s/%s",
-        i + start_batch - 1L,
-        length(batches) + start_batch - 1L,
+      lg$info(
+        "processing batch {cur}/{all} ({length(ids)} files)",
+        cur = batch_number,
+        all = length(batches) + start_batch - 1L,
         file = outf
       )
 
-      ids <- seq_along(batches[[i]]) - 1L
-
       scale <-  paste(
-        glue("[{ids}:v:0]scale='if(gt(a*sar,{resolution[[1]]}/{resolution[[2]]}),{resolution[[1]]},{resolution[[2]]}*iw*sar/ih)':'if(gt(a*sar,16/9),{resolution[[1]]}*ih/iw/sar,{resolution[[2]]})', pad={resolution[[1]]}:{resolution[[2]]}:(ow-iw)/2:(oh-ih)/2,setsar=1[v{ids}]"),
+        glue("[{ids}:v:0]scale='if(gt(a*sar,{resolution[[1]]}/{resolution[[2]]}),{resolution[[1]]},{resolution[[2]]}*iw*sar/ih)':'if(gt(a*sar,16/9),{resolution[[1]]}*ih/iw/sar,{resolution[[2]]})', setsar=1[v{ids}]"),
         collapse = "; "
       )
+
 
       concat <- paste0(
         paste0("[v", ids, "]", collapse = ""), glue("concat=n={length(batches[[i]])}:v=1")
       )
 
-
       assert(all(file.exists(batches[[i]])))
       outf_tmp <- paste0(tools::file_path_sans_ext(outf), "_tmp.mkv")
-
 
       args <- glue(
         '{inf} -y -filter_complex "
         color=size={resolution[[1]]*2}x{resolution[[2]]*2}:color=black [bgr];\
         {scale};\
         {concat}[out];\
-        [out]{mirror}[out];\
-        [out]rotate={rotate}[out];\
-        [out]hue={hue}[out]
+        [out]{make_mirror(mirror)}[out];\
+        [out]{paste(filters, collapse = ";")}[out]
         " -map [out] {outf_tmp} -c:v {video_codec}'
       )
 
-
       t1 <- Sys.time()
 
-      ret <- system2(
+      lg$debug("calling ffmpeg", args = gsub("\n", "", args))
+
+      ret <- try({system2(
         "ffmpeg",
         args,
         stderr = stderr_log,
         stdout = stdout_log
-      )
+      )})
 
       tdiffs[[i]] <- Sys.time() - t1
 
-      if (ret != 0){
+      if (is_try_error(ret) || !identical(as.integer(ret), 0L)){
         walk(tail(readLines(stderr_log)), lg$fatal)
-        stop(lg$fatal("ffmpeg returned 1, please check log files"))
+        lg$fatal(
+          "skipping batch {batch_number} because of ffmpeg error; please check log files.",
+          temp_file = outf_tmp,
+          args = args
+        ) %>%
+          stop()
       }
 
-
       file.rename(outf_tmp, outf)
-      pb$tick(tokens = list(
-        total_eta      = format(t0 + (mean(tdiffs) * 80)),
-        chunk_eta = format(Sys.time() + mean(tdiffs), "%H:%M:%S")
-      ))
+
+      lg$debug("finished processing batch {batch_number}")
+      pb$tick()
     }
   }
 
@@ -151,6 +151,16 @@ rorschach_drama <- function(
 
 
 
+#' Title
+#'
+#' @param infiles
+#' @param outfile
+#' @param temp_dir
+#'
+#' @return
+#' @export
+#'
+#' @examples
 concatennate_media <- function(
   infiles,
   outfile,
@@ -167,11 +177,11 @@ concatennate_media <- function(
     if (overwrite){
       file.remove(outfile)
     } else {
-      stop(FATAL("'%s' exsits and overwrite == FALSE", outfile))
+      stop(FileExistsError(lg$fatal("'{outfile}' exsits and overwrite == FALSE")))
     }
   }
 
-  lg$info("Concatennating results to '%s'", outfile)
+  lg$info("concatennating results to '{outfile}'")
 
   ret <- system2(
     "ffmpeg", glue("-f concat -safe 0 -i {listfile} -c copy {outfile}"),
@@ -187,53 +197,94 @@ concatennate_media <- function(
 }
 
 
+make_mirror <- function(n){
+  is_scalar_integerish(n)
+  n <- as.integer(n)
 
-mirror_presets <- list(
-  h = "split [main][flip]; [flip]crop=iw/2:ih:0:0, hflip[flip]; [main][flip] overlay=W/2:0",
-  v = "split [main][flip]; [flip]crop=iw:ih/2:0:0, hflip[flip]; [main][flip] overlay=0:H/2",
-  "4" =
-    "split=4 [in0][in1][in2][in3]; \
-    [in1] crop=iw/2:ih/2:0:0, hflip [in1]; \
-    [in2] crop=iw/2:ih/2:0:0, vflip [in2]; \
-    [in3] crop=iw/2:ih/2:0:0, vflip, hflip [in3]; \
-    [in0][in1] overlay=W/2:0   [mid0];\
-    [mid0][in2] overlay=0:H/2  [mid1];\
-    [mid1][in3] overlay=W/2:H/2 ",
-  "16" =  # shortest=1 for the first overlay so that the nullsink does not go on forever
-    "split=16 [in0][in1][in2][in3][in4][in5][in6][in7][in8][in9][ina][inb][inc][ind][ine][inf]; \
-    [in0] crop=iw/2:ih/2:0:0 [in0];\
-    [in1] crop=iw/2:ih/2:0:0, hflip [in1]; \
-    [in2] crop=iw/2:ih/2:0:0, vflip [in2]; \
-    [in3] crop=iw/2:ih/2:0:0, vflip, hflip [in3]; \
-    [in4] crop=iw/2:ih/2:0:0 [in4];\
-    [in5] crop=iw/2:ih/2:0:0, hflip [in5]; \
-    [in6] crop=iw/2:ih/2:0:0, vflip [in6]; \
-    [in7] crop=iw/2:ih/2:0:0, vflip, hflip [in7]; \
-    [in8] crop=iw/2:ih/2:0:0 [in8];\
-    [in9] crop=iw/2:ih/2:0:0, hflip [in9]; \
-    [ina] crop=iw/2:ih/2:0:0, vflip [ina]; \
-    [inb] crop=iw/2:ih/2:0:0, vflip, hflip [inb]; \
-    [inc] crop=iw/2:ih/2:0:0 [inc];\
-    [ind] crop=iw/2:ih/2:0:0, hflip [ind]; \
-    [ine] crop=iw/2:ih/2:0:0, vflip [ine]; \
-    [inf] crop=iw/2:ih/2:0:0, vflip, hflip [inf]; \
-    [bgr][in1] overlay=0:2:shortest=1 [mid];\
-    [mid][in2] overlay=w:0    [mid];\
-    [mid][in3] overlay=2*w:0   [mid];\
-    [mid][in0] overlay=3*w:0   [mid];\
-    [mid][in7] overlay=0:h     [mid];\
-    [mid][in8] overlay=w:h    [mid];\
-    [mid][in5] overlay=2*w:h   [mid];\
-    [mid][in6] overlay=3*w:h   [mid];\
-    [mid][in9] overlay=0:2*h     [mid];\
-    [mid][ina] overlay=w:2*h    [mid];\
-    [mid][inb] overlay=2*w:2*h   [mid];\
-    [mid][inc] overlay=3*w:2*h   [mid];\
-    [mid][inf] overlay=0:3*h     [mid];\
-    [mid][in4] overlay=w:3*h    [mid];\
-    [mid][ind] overlay=2*w:3*h   [mid];\
-    [mid][ine] overlay=3*w:3*h"
-)
+  idx <- seq_len(n)
+  ipd <- pad_left(idx, 3, "0")
+
+  streams <- glue("[in{ipd}]")
+
+  crop <- character()
+  over <- character()
+
+  h <- 0
+  w <- 0
+  w_max = 1
+  h_max = 0
+
+  direction <- 1
+  horizontal <- TRUE  # wether to advance horizontal or vertical
+  flip_v <- FALSE
+  flip_h <- FALSE
+
+
+  for (i in idx){
+
+    if (flip_v && flip_h){
+      crop[[i]] <- glue("[in{ipd[[i]]}] crop=iw/2:ih/2:0:0, vflip, hflip [in{ipd[[i]]}]")
+
+    } else if (flip_v){
+      crop[[i]] <- glue("[in{ipd[[i]]}] crop=iw/2:ih/2:0:0, vflip [in{ipd[[i]]}]")
+
+    } else if (flip_h){
+      crop[[i]] <- glue("[in{ipd[[i]]}] crop=iw/2:ih/2:0:0, hflip [in{ipd[[i]]}]")
+
+    } else {
+      crop[[i]] <- glue("[in{ipd[[i]]}] crop=iw/2:ih/2:0:0 [in{ipd[[i]]}]")
+    }
+
+    if (i == 1){
+      over[[i]] <- glue("[bgr][in{ipd[[i]]}] overlay=w*{w}:h*{h}:shortest=1 [bgr]")
+    } else {
+      over[[i]] <- glue("[bgr][in{ipd[[i]]}] overlay=w*{w}:h*{h} [bgr]")
+    }
+
+  # advance
+    if (horizontal){
+      w <- w + direction
+      flip_h <- !flip_h
+    } else {
+      h <- h + direction
+      flip_v <- !flip_v
+    }
+
+    # lower left corner
+    if (w == -w_max && h == -h_max){
+      w_max <- w_max + 1
+      horizontal <- TRUE
+      direction <- 1
+    }
+
+    # lower right corner
+    if (w == w_max && h == -h_max){
+      h_max <- h_max + 1
+      horizontal <- FALSE
+      direction <- 1
+    }
+
+    # top right
+    if (w == w_max && h == h_max){
+      horizontal <- TRUE
+      direction <- -1
+    }
+
+    # top left
+    if (w == -w_max && h == h_max){
+      direction <- -1
+      horizontal <- FALSE
+    }
+  }
+
+  res <- glue(
+    "split={n} {paste(streams, collapse = '')};",
+    paste(crop, collapse = ";"), ";",
+    paste(over, collapse = ";")
+  )
+
+  sub("\\[bgr\\]$", "", res)
+}
 
 
 
