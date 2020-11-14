@@ -22,6 +22,7 @@ rorschach_drama <- function(
   tune = "film", # "film", "animation",
   batch_size = 50,
   temp_dir = tempdir(),
+  pre_filters = NULL,
   filters = list(
     glue("rotate=2*PI*t/10:ow={resolution[[1]]}:oh={resolution[[2]]}:c=none"),
     "hue=H=2*PI*t: s=sin(2*PI*t)+1"
@@ -94,24 +95,30 @@ rorschach_drama <- function(
       )
 
       scale <-  paste(
-        glue("[{ids}:v:0]scale='if(gt(a*sar,{resolution[[1]]}/{resolution[[2]]}),{resolution[[1]]},{resolution[[2]]}*iw*sar/ih)':'if(gt(a*sar,16/9),{resolution[[1]]}*ih/iw/sar,{resolution[[2]]})', setsar=1[v{ids}]"),
+        glue("[{ids}:v:0]scale={resolution[[1]]}:{resolution[[2]]}:force_original_aspect_ratio=decrease, setsar=1[v{ids}]"),
         collapse = "; "
       )
 
-
       concat <- paste0(
-        paste0("[v", ids, "]", collapse = ""), glue("concat=n={length(batches[[i]])}:v=1")
+        paste0("[v", ids, "]", collapse = ""), glue("concat=n={length(batches[[i]])}:v=1:unsafe=1")
       )
 
       assert(all(file.exists(batches[[i]])))
       outf_tmp <- paste0(tools::file_path_sans_ext(outf), "_tmp.mkv")
+
+      if (!length(filters))
+        filters <- "null"
+
+      if (!length(pre_filters))
+        pre_filters <- "null"
 
       args <- glue(
         '{inf} -y -filter_complex "
         color=size={resolution[[1]]*2}x{resolution[[2]]*2}:color=black [bgr];\
         {scale};\
         {concat}[out];\
-        [out]{make_mirror(mirror)}[out];\
+        [out]{paste(pre_filters, collapse = "[out];[out]")}[out];\
+        [out]{make_double_mirror(mirror)}[out];\
         [out]{paste(filters, collapse = ";")}[out]
         " -map [out] {outf_tmp} -c:v {video_codec}'
       )
@@ -279,6 +286,144 @@ make_mirror <- function(n){
 
   res <- glue(
     "split={n} {paste(streams, collapse = '')};",
+    paste(crop, collapse = ";"), ";",
+    paste(over, collapse = ";")
+  )
+
+  sub("\\[bgr\\]$", "", res)
+}
+
+
+
+
+
+make_double_mirror <- function(n){
+  is_scalar_integerish(n)
+  n <- as.integer(n)
+
+  ipd <- pad_left(seq_len(n*2), 3, "0")
+
+  streams <- glue("[in{ipd}]")
+
+  crop <- character()
+  over <- character()
+
+  h <- 0
+  w <- 0
+  w_max = 1
+  h_max = 0
+
+  direction <- 1
+  horizontal <- TRUE  # wether to advance horizontal or vertical
+  flip_v <- FALSE
+  flip_h <- FALSE
+
+
+  for (i in seq_len(n)){
+
+    if (flip_v && flip_h){
+      crop[[i]] <- glue("[in{ipd[[i]]}] crop=iw/2:ih/2:0:0, vflip, hflip [in{ipd[[i]]}]")
+
+    } else if (flip_v){
+      crop[[i]] <- glue("[in{ipd[[i]]}] crop=iw/2:ih/2:0:0, vflip [in{ipd[[i]]}]")
+
+    } else if (flip_h){
+      crop[[i]] <- glue("[in{ipd[[i]]}] crop=iw/2:ih/2:0:0, hflip [in{ipd[[i]]}]")
+
+    } else {
+      crop[[i]] <- glue("[in{ipd[[i]]}] crop=iw/2:ih/2:0:0 [in{ipd[[i]]}]")
+    }
+
+    if (i == 1){
+      over[[i]] <- glue("[bgr][in{ipd[[i]]}] overlay=w*{w}:h*{h}:shortest=1 [bgr]")
+    } else {
+      over[[i]] <- glue("[bgr][in{ipd[[i]]}] overlay=w*{w}:h*{h} [bgr]")
+    }
+
+    # advance
+    if (horizontal){
+      w <- w + direction
+      flip_h <- !flip_h
+    } else {
+      h <- h + direction
+      flip_v <- !flip_v
+    }
+
+    # lower left corner
+    if (w == -w_max && h == -h_max){
+      w_max <- w_max + 1
+      horizontal <- TRUE
+      direction <- 1
+    }
+
+    # lower right corner
+    if (w == w_max && h == -h_max){
+      h_max <- h_max + 1
+      horizontal <- FALSE
+      direction <- 1
+    }
+
+    # top right
+    if (w == w_max && h == h_max){
+      horizontal <- TRUE
+      direction <- -1
+    }
+
+    # top left
+    if (w == -w_max && h == h_max){
+      direction <- -1
+      horizontal <- FALSE
+    }
+  }
+
+  offset <- i
+  h = 0
+  w = 0
+
+  for (i in seq_len(n) + offset){
+
+    crop[[i]] <- glue("[in{ipd[[i]]}] crop=iw/2:ih/2:iw/4:ih/4 [in{ipd[[i]]}]")
+    over[[i]] <- glue("[bgr][in{ipd[[i]]}] overlay=w/4+w*{w}:h/4+h*{h}:shortest=1 [bgr]")
+
+    # advance
+    if (horizontal){
+      w <- w + direction
+      flip_h <- !flip_h
+    } else {
+      h <- h + direction
+      flip_v <- !flip_v
+    }
+
+    # lower left corner
+    if (w == -w_max && h == -h_max){
+      w_max <- w_max + 1
+      horizontal <- TRUE
+      direction <- 1
+    }
+
+    # lower right corner
+    if (w == w_max && h == -h_max){
+      h_max <- h_max + 1
+      horizontal <- FALSE
+      direction <- 1
+    }
+
+    # top right
+    if (w == w_max && h == h_max){
+      horizontal <- TRUE
+      direction <- -1
+    }
+
+    # top left
+    if (w == -w_max && h == h_max){
+      direction <- -1
+      horizontal <- FALSE
+    }
+  }
+
+
+  res <- glue(
+    "split={n*2} {paste(streams, collapse = '')};",
     paste(crop, collapse = ";"), ";",
     paste(over, collapse = ";")
   )
